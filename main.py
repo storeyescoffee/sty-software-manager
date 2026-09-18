@@ -21,7 +21,7 @@ def main() -> None:
         return
 
     if command.get("type") == "INSTALL":
-        exit_code, log = run_install(command["githubUrl"], command["code"], config.timeout_seconds)
+        exit_code, log = run_install(command["githubUrl"], command["code"], config.base_dir, config.timeout_seconds)
     else:
         exit_code, log = run_command(command["cmd"], config.timeout_seconds)
 

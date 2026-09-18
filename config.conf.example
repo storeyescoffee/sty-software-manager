@@ -2,3 +2,4 @@
 base_url = https://panel.storeyes.io/api
 timeout_seconds = 600
 max_log_chars = 20000
+base_dir = /home/m0hcine24

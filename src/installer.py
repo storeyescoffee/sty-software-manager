@@ -8,14 +8,14 @@ from typing import Tuple
 from .executor import run_command
 
 
-def run_install(github_url: str, code: str, timeout_seconds: int) -> Tuple[int, str]:
-    target_dir = os.path.expanduser(f"~/{code}")
+def run_install(github_url: str, code: str, base_dir: str, timeout_seconds: int) -> Tuple[int, str]:
+    target_dir = os.path.join(base_dir, code)
     if os.path.isdir(target_dir):
         return 0, f"{target_dir} already exists — treating as already installed, skipping."
 
     steps = [
-        f"git clone {github_url} ~/{code}",
-        f"cd ~/{code}",
+        f"git clone {github_url} {target_dir}",
+        f"cd {target_dir}",
         "chmod +x install.sh",
         "sudo ./install.sh",
     ]

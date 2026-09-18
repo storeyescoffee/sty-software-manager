@@ -6,11 +6,13 @@ reports back the exit code and log once it's done. There are two kinds of comman
 - **`RUN`** — the backend has already built the full shell string (from `Software.entrypoint` +
   `CommandStructure` arguments); the agent just executes `cmd` as-is.
 - **`INSTALL`** — the backend only supplies the raw ingredients (`githubUrl`, `code`); the agent
-  itself builds and runs the install sequence (see `src/installer.py`). If `~/<code>` already
+  itself builds and runs the install sequence (see `src/installer.py`). Everything installs under
+  `base_dir` from `config.conf` (default `/home/m0hcine24`; not `~` — the agent runs as root via
+  cron, so `~` would resolve to `/root`, not a real user's home). If `<base_dir>/<code>` already
   exists, it skips straight to success (treated as already installed) rather than attempting a
   `git clone` that would fail on a non-empty directory. Otherwise:
-  1. `git clone <githubUrl> ~/<code>`
-  2. `cd ~/<code>`
+  1. `git clone <githubUrl> <base_dir>/<code>`
+  2. `cd <base_dir>/<code>`
   3. `chmod +x install.sh`
   4. `sudo ./install.sh`
 
@@ -19,9 +21,13 @@ reports back the exit code and log once it's done. There are two kinds of comman
   any other command; the backend flips the linked `Installation` to `INSTALLED` on success (or
   `FAILED` otherwise) — see `CommandPollingService.recordResult`.
 
-  Note: this means **Reinstall is currently a no-op** once `~/<code>` exists — it just re-reports
-  success without re-cloning or re-running `install.sh`. Say if you want Reinstall to actually wipe
-  and redo it.
+  Note: this means **Reinstall is currently a no-op** once `<base_dir>/<code>` exists — it just
+  re-reports success without re-cloning or re-running `install.sh`. Say if you want Reinstall to
+  actually wipe and redo it.
+
+  Also note: the backend's `RUN` commands still `cd ~/<code>` (see `CommandBuilderService`), so a
+  `RUN` command issued after this install would look in the wrong place. Say if you want that
+  updated to match.
 
 ## Install
 
@@ -52,7 +58,7 @@ its `boardId` in the admin panel. No API key is used for now (the backend accept
 - `src/api_client.py` — `GET /device-gw/commands/next`, `POST /device-gw/commands/{id}/result` (stdlib `urllib` only — no `pip install` needed).
 - `src/installer.py` — builds and runs the `INSTALL` step sequence from `githubUrl`/`code`.
 - `src/executor.py` — runs a shell command via `subprocess`, capturing exit code + combined stdout/stderr. Used directly for `RUN` commands, and by `installer.py` for `INSTALL`.
-- `src/config.py` — loads `config.conf` (`base_url`, `timeout_seconds`, `max_log_chars`).
+- `src/config.py` — loads `config.conf` (`base_url`, `timeout_seconds`, `max_log_chars`, `base_dir`).
 
 ## Why cron, not a daemon
 
