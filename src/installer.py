@@ -21,4 +21,4 @@ def run_install(github_url: str, code: str, base_dir: str, timeout_seconds: int)
     ]
     # Chained in one shell invocation so `cd` carries over to the following steps, and so the
     # whole sequence stops (and reports a non-zero exit code) at the first failing step.
-    return run_command(" && ".join(steps), timeout_seconds)
+    return run_command(" && ".join(steps), timeout_seconds, base_dir)

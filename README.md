@@ -7,8 +7,7 @@ reports back the exit code and log once it's done. There are two kinds of comman
   `CommandStructure` arguments); the agent just executes `cmd` as-is.
 - **`INSTALL`** — the backend only supplies the raw ingredients (`githubUrl`, `code`); the agent
   itself builds and runs the install sequence (see `src/installer.py`). Everything installs under
-  `base_dir` from `config.conf` (default `/home/m0hcine24`; not `~` — the agent runs as root via
-  cron, so `~` would resolve to `/root`, not a real user's home). If `<base_dir>/<code>` already
+  `base_dir` from `config.conf` (default `/home/m0hcine24`). If `<base_dir>/<code>` already
   exists, it skips straight to success (treated as already installed) rather than attempting a
   `git clone` that would fail on a non-empty directory. Otherwise:
   1. `git clone <githubUrl> <base_dir>/<code>`
@@ -25,22 +24,33 @@ reports back the exit code and log once it's done. There are two kinds of comman
   re-reports success without re-cloning or re-running `install.sh`. Say if you want Reinstall to
   actually wipe and redo it.
 
-  Also note: the backend's `RUN` commands still `cd ~/<code>` (see `CommandBuilderService`), so a
-  `RUN` command issued after this install would look in the wrong place. Say if you want that
-  updated to match.
+## Running as root, rooted at `base_dir`
+
+The agent runs as root (it has to — installs call `apt`, write to `/etc`, and so on), but every
+command it executes runs **from `base_dir` with `HOME=base_dir`**, not from `/root`. That's set in
+two places: `install.sh` puts `HOME=<base_dir>` at the top of the cron.d entry, and
+`src/executor.py` passes `cwd`/`HOME` per command. So the backend's `RUN` commands, which `cd
+~/<code>` (see `CommandBuilderService`), land in the same place `INSTALL` cloned to.
+
+A relative command therefore resolves against `base_dir`. If `base_dir` doesn't exist the agent
+still polls normally — only the commands themselves fail, and they report that back to the panel.
 
 ## Install
 
 ```bash
-sudo ./install.sh --base-url https://panel.storeyes.io/api
+sudo ./install.sh --base-url https://panel.storeyes.io/api --base-dir /home/m0hcine24
 ```
 
 This installs the `at` package (required for `longRunning` commands, which the backend wraps as
 `echo '<cmd>' | at now` so a never-exiting process doesn't block the once-a-minute poll loop),
-copies the agent to `/opt/storeyes-agent`, writes `/etc/cron.d/storeyes-agent` to run it every
-minute, and adds a `logrotate` entry for `/var/log/storeyes-agent.log`.
+writes `/etc/cron.d/storeyes-agent` to run it every minute, and adds a `logrotate` entry for
+`/var/log/storeyes-agent.log`.
 
-Re-running `install.sh` (e.g. to ship a code update) never overwrites an existing `config.conf`.
+The agent runs from wherever this repository is checked out — `install.sh` copies nothing, it just
+points cron at `main.py` in place. Shipping a code update is therefore a `git pull` in this
+directory; re-run `install.sh` only if the checkout moves. Re-running it never overwrites an
+existing `config.conf` — an existing one's `base_dir` also wins over `--base-dir`, and the cron
+entry's `HOME` is written from whatever that file ends up saying.
 
 ## Identity
 
@@ -57,7 +67,7 @@ its `boardId` in the admin panel. No API key is used for now (the backend accept
 - `src/device_identity.py` — reads the Pi's serial from `/proc/cpuinfo`.
 - `src/api_client.py` — `GET /device-gw/commands/next`, `POST /device-gw/commands/{id}/result` (stdlib `urllib` only — no `pip install` needed).
 - `src/installer.py` — builds and runs the `INSTALL` step sequence from `githubUrl`/`code`.
-- `src/executor.py` — runs a shell command via `subprocess`, capturing exit code + combined stdout/stderr. Used directly for `RUN` commands, and by `installer.py` for `INSTALL`.
+- `src/executor.py` — runs a shell command via `subprocess` from `base_dir` with `HOME=base_dir`, capturing exit code + combined stdout/stderr. Used directly for `RUN` commands, and by `installer.py` for `INSTALL`.
 - `src/config.py` — loads `config.conf` (`base_url`, `timeout_seconds`, `max_log_chars`, `base_dir`).
 
 ## Why cron, not a daemon
@@ -66,26 +76,7 @@ A command still `RUNNING` when the next minute's tick fires isn't a problem: the
 hands out a command still in `PENDING` status, so an overlapping tick just gets "nothing to do"
 (204) and exits immediately. No lock file, no process supervisor needed.
 
-## On-demand trigger (from storeyes-onboarding)
-
-Since `main.py` is already just "one poll/execute/report pass per invocation" rather than a
-daemon, nothing about the agent itself needed to change to support running it outside of cron —
-it just needed to be safely invocable by something other than root's crontab.
-
-`install.sh` now also installs `/etc/sudoers.d/storeyes-agent-trigger`, granting the user that ran
-`sudo ./install.sh` (via `$SUDO_USER`) passwordless rights to exactly one command:
-
-```
-sudo /usr/bin/python3 /opt/storeyes-agent/main.py
-```
-
-storeyes-onboarding — the web console that also runs on the Pi as that same ordinary user — uses
-this to expose `POST /agent/run`, so a command just queued from the admin panel (or from
-storeyes-fast-onboarding's device dashboard) can execute immediately instead of waiting up to a
-minute for the next cron tick. It fires the process and returns right away rather than waiting for
-it to finish — a single pass can legitimately run for `timeout_seconds` (10 minutes by default)
-if it's an `INSTALL`, and the result is reported back to the backend independently either way, the
-same as any cron-triggered run.
-
-If a device was set up before this change, re-run `sudo ./install.sh` on it to pick up the sudoers
-rule — it's idempotent and won't touch the existing `config.conf` or cron entry.
+This agent is otherwise independent of
+[storeyes-onboarding](https://github.com/storeyescoffee/storeyes-onboarding) — that's a separate,
+unrelated service that happens to run on the same Pi. Neither one triggers or depends on the
+other; storeyes-fast-onboarding's Software tab installs this agent directly over SSH instead.
