@@ -43,7 +43,7 @@ sudo ./install.sh --base-url https://panel.storeyes.io/api --base-dir /home/m0hc
 
 This installs the `at` package (required for `longRunning` commands, which the backend wraps as
 `echo '<cmd>' | at now` so a never-exiting process doesn't block the once-a-minute poll loop),
-writes `/etc/cron.d/storeyes-agent` to run it every minute, and adds a `logrotate` entry for
+writes `/etc/cron.d/sty-software-manager` to run it every minute, and adds a `logrotate` entry for
 `/var/log/storeyes-agent.log`.
 
 The agent runs from wherever this repository is checked out — `install.sh` copies nothing, it just

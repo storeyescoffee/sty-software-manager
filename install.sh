@@ -15,7 +15,7 @@
 set -euo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CRON_FILE="/etc/cron.d/storeyes-agent"
+CRON_FILE="/etc/cron.d/sty-software-manager"
 LOGROTATE_FILE="/etc/logrotate.d/storeyes-agent"
 LOG_FILE="/var/log/storeyes-agent.log"
 BASE_URL="https://panel.storeyes.io/api"
