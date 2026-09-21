@@ -65,3 +65,27 @@ its `boardId` in the admin panel. No API key is used for now (the backend accept
 A command still `RUNNING` when the next minute's tick fires isn't a problem: the backend only
 hands out a command still in `PENDING` status, so an overlapping tick just gets "nothing to do"
 (204) and exits immediately. No lock file, no process supervisor needed.
+
+## On-demand trigger (from storeyes-onboarding)
+
+Since `main.py` is already just "one poll/execute/report pass per invocation" rather than a
+daemon, nothing about the agent itself needed to change to support running it outside of cron —
+it just needed to be safely invocable by something other than root's crontab.
+
+`install.sh` now also installs `/etc/sudoers.d/storeyes-agent-trigger`, granting the user that ran
+`sudo ./install.sh` (via `$SUDO_USER`) passwordless rights to exactly one command:
+
+```
+sudo /usr/bin/python3 /opt/storeyes-agent/main.py
+```
+
+storeyes-onboarding — the web console that also runs on the Pi as that same ordinary user — uses
+this to expose `POST /agent/run`, so a command just queued from the admin panel (or from
+storeyes-fast-onboarding's device dashboard) can execute immediately instead of waiting up to a
+minute for the next cron tick. It fires the process and returns right away rather than waiting for
+it to finish — a single pass can legitimately run for `timeout_seconds` (10 minutes by default)
+if it's an `INSTALL`, and the result is reported back to the backend independently either way, the
+same as any cron-triggered run.
+
+If a device was set up before this change, re-run `sudo ./install.sh` on it to pick up the sudoers
+rule — it's idempotent and won't touch the existing `config.conf` or cron entry.

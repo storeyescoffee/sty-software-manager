@@ -1,0 +1,12 @@
+# storeyes-agent — on-demand trigger allowlist.
+#
+# Lets the storeyes-onboarding console (which runs as an ordinary user, never
+# root) kick off an immediate agent poll/execute/report pass instead of
+# waiting for the next cron minute. install.sh installs this automatically,
+# substituting the real console user in for `pi` below (the user that invoked
+# `sudo ./install.sh`).
+#
+# Only this exact command is permitted without a password — same shape as the
+# cron.d entry this script also installs.
+
+pi ALL=(root) NOPASSWD: /usr/bin/python3 /opt/storeyes-agent/main.py

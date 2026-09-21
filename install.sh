@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Installs the storeyes device agent on a Raspberry Pi: the `at` scheduler (needed for
 # longRunning commands), the agent files under /opt/storeyes-agent, its config, a cron.d entry
-# that runs it every minute, and a logrotate snippet so the log doesn't grow unbounded.
+# that runs it every minute, a logrotate snippet so the log doesn't grow unbounded, and a
+# sudoers rule letting the calling user (via storeyes-onboarding's POST /agent/run) trigger
+# an immediate run instead of waiting for the next cron minute.
 #
 # Usage: sudo ./install.sh [--base-url https://panel.storeyes.io/api]
 #
@@ -14,6 +16,7 @@ CRON_FILE="/etc/cron.d/storeyes-agent"
 LOGROTATE_FILE="/etc/logrotate.d/storeyes-agent"
 LOG_FILE="/var/log/storeyes-agent.log"
 BASE_URL="https://panel.storeyes.io/api"
+SUDOERS_DST="/etc/sudoers.d/storeyes-agent-trigger"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This script must be run as root (sudo ./install.sh)" >&2
@@ -69,6 +72,19 @@ $LOG_FILE {
   notifempty
 }
 EOF
+
+if [ -n "${SUDO_USER:-}" ]; then
+  echo "Installing the on-demand trigger sudoers rule for $SUDO_USER..."
+  sed "s/^pi /$SUDO_USER /" "$SCRIPT_DIR/deploy/sudoers.d/storeyes-agent-trigger" > "$SUDOERS_DST"
+  chmod 440 "$SUDOERS_DST"
+  chown root:root "$SUDOERS_DST"
+  visudo -cq || { echo "Generated sudoers file is invalid, removing it." >&2; rm -f "$SUDOERS_DST"; exit 1; }
+  echo "$SUDO_USER can now run 'sudo /usr/bin/python3 $INSTALL_DIR/main.py' without a password"
+  echo "(this is what storeyes-onboarding's POST /agent/run uses to trigger a run on demand)."
+else
+  echo "Skipping the on-demand trigger sudoers rule: could not determine the calling user (\$SUDO_USER unset)." >&2
+  echo "Run this script via 'sudo ./install.sh' as that user, or add $SUDOERS_DST by hand — see deploy/sudoers.d/storeyes-agent-trigger." >&2
+fi
 
 BOARD_ID="$(python3 -c "import sys; sys.path.insert(0, '$INSTALL_DIR'); from src.device_identity import get_board_id; print(get_board_id())")"
 
