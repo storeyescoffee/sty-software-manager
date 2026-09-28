@@ -2,18 +2,20 @@
 
 import os
 import subprocess
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
-def run_command(cmd: str, timeout_seconds: int, base_dir: Optional[str] = None) -> Tuple[int, str]:
+def run_command(
+    cmd: str, timeout_seconds: int, base_dir: Optional[str] = None, extra_env: Optional[Dict[str, str]] = None
+) -> Tuple[int, str]:
     """Runs `cmd` through the shell. When `base_dir` is given, the command runs from there with
     HOME pointed at it — the agent runs as root via cron, so without this a command containing
     `~` (the backend's RUN commands do `cd ~/<code>`) would resolve to /root instead of the real
-    user's home where INSTALL put everything."""
-    env = None
+    user's home where INSTALL put everything. `extra_env` is added on top (e.g. STY_COMMAND_ID)."""
+    env = {**os.environ, **extra_env} if extra_env else None
     cwd = None
     if base_dir:
-        env = {**os.environ, "HOME": base_dir}
+        env = {**(env or os.environ), "HOME": base_dir}
         # Only chdir if it actually exists: subprocess raises before running anything otherwise,
         # which would cost us the command's own error message.
         cwd = base_dir if os.path.isdir(base_dir) else None

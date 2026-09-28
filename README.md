@@ -24,6 +24,53 @@ reports back the exit code and log once it's done. There are two kinds of comman
   re-reports success without re-cloning or re-running `install.sh`. Say if you want Reinstall to
   actually wipe and redo it.
 
+## Schedules
+
+An Installation can have schedules (set from the admin panel's Schedule button): `CRON` with a
+standard 5-field expression (`minute hour day-of-month month day-of-week`, e.g. `0 23 * * *`), or
+`ONE_TIME` at a date + time. Every run is recorded as a regular Command (log + exit code) whose
+`origin` is `CRON` or `SCHEDULED` (ONE_TIME) — as opposed to `ON_DEMAND` for the panel's
+Run button.
+
+- The every-minute tick that lands on **00:00** fetches the schedules (`GET
+  /device-gw/schedules?date=<local date>`: every CRON schedule plus the ONE_TIME ones due that
+  day, each with its built `cmd`) and rewrites
+  `/etc/cron.d/sty-schedule`. **Cron itself runs the command**; each line is roughly:
+
+  ```
+  0 23 * * * root ID=$(python3 main.py --start-schedule 5) && STY_COMMAND_ID="$ID" STY_MANAGER=<this dir> /bin/sh -c '<cmd>'
+  ```
+
+  `--start-schedule` calls `POST /device-gw/schedules/<id>/trigger` (the backend creates the
+  Command, already `RUNNING`, flagged `CRON`/`SCHEDULED`) and prints its id. A schedule deleted in
+  the meantime exits 1 and the run is skipped; if the backend is unreachable the command still runs,
+  unreported.
+- `main.py --update-schedules` does the midnight reload immediately. The backend also queues a
+  `SYNC_SCHEDULES` command whenever a schedule is added, edited or deleted, so changes reach the
+  device within a minute.
+
+## Self-reporting software
+
+Any software run by the manager (on demand from the panel, or by a schedule's cron line) gets two
+environment variables:
+
+- `STY_COMMAND_ID` — the Command this run belongs to (its `ON_DEMAND`/`CRON`/`SCHEDULED` flag is
+  already set on the backend).
+- `STY_MANAGER` — this checkout's directory.
+
+When it's done, the software reports its own log and exit code:
+
+```bash
+python3 "$STY_MANAGER/main.py" --report --command-id "$STY_COMMAND_ID" --exit-code 0 < run.log
+```
+
+A software report always wins on the backend. The manager still reports on-demand runs itself after
+the process exits, but that report is ignored once the software has reported — so software that
+doesn't self-report keeps working as before. Self-reporting matters most for scheduled runs (the
+manager isn't in the loop once cron starts the command) and long-running commands detached with
+`at now` (the manager only sees `at` exit). With neither variable set (a manual run), the software
+just skips reporting. See `haoudej_script` for a reference implementation.
+
 ## Running as root, rooted at `base_dir`
 
 The agent runs as root (it has to — installs call `apt`, write to `/etc`, and so on), but every
@@ -66,6 +113,7 @@ its `boardId` in the admin panel. No API key is used for now (the backend accept
 - `main.py` — entry point; one poll/execute/report pass per invocation, branches on `type`.
 - `src/device_identity.py` — reads the Pi's serial from `/proc/cpuinfo`.
 - `src/api_client.py` — `GET /device-gw/commands/next`, `POST /device-gw/commands/{id}/result` (stdlib `urllib` only — no `pip install` needed).
+- `src/scheduler.py` — renders and atomically writes `/etc/cron.d/sty-schedule`.
 - `src/installer.py` — builds and runs the `INSTALL` step sequence from `githubUrl`/`code`.
 - `src/executor.py` — runs a shell command via `subprocess` from `base_dir` with `HOME=base_dir`, capturing exit code + combined stdout/stderr. Used directly for `RUN` commands, and by `installer.py` for `INSTALL`.
 - `src/config.py` — loads `config.conf` (`base_url`, `timeout_seconds`, `max_log_chars`, `base_dir`).
